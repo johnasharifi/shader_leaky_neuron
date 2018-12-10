@@ -1,0 +1,40 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+
+#define LEAK_THETA 0.9
+#define LEAK_RATE 0.5
+#define LEAK_REGRESSION_RATE 1.3
+#define ACTIVATION_REGRESSION_RATE 0.999
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> Result;
+
+int height;
+int width;
+float growth_interval;
+
+RWStructuredBuffer<float> buffer_growth;
+RWStructuredBuffer<float> buffer_activation;
+RWStructuredBuffer<float> buffer_leak;
+
+#pragma kernel CSIterate
+[numthreads(16,16,1)]
+
+void CSIterate(uint3 id: SV_DispatchThreadID) {
+	int ind = (int) (id.x * width + id.y);
+
+	buffer_activation[ind] = (buffer_activation[ind] + buffer_growth[ind] * growth_interval * (1 - buffer_leak[ind] / LEAK_RATE)) * ACTIVATION_REGRESSION_RATE;
+
+	buffer_leak[ind] = (buffer_activation[ind] > LEAK_THETA? LEAK_RATE: (buffer_leak[ind] / LEAK_REGRESSION_RATE));
+
+	float delta = buffer_activation[ind] * buffer_leak[ind];
+	for (int i = ind - 1; i <= ind + 1; i++) {
+		for (int j = -1 * height; j <= height; j = j + 2 * height) {
+			int offset_ind = i + j;
+			buffer_activation[offset_ind] = buffer_activation[offset_ind] + delta / 9;
+		}
+	}
+	buffer_activation[ind] = buffer_activation[ind] - delta;
+
+	Result[id.xy] = float4(buffer_activation[ind], buffer_activation[ind], buffer_activation[ind], 0.0);
+}
